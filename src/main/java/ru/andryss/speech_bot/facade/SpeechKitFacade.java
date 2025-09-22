@@ -21,15 +21,21 @@ import yandex.cloud.api.ai.stt.v3.Stt.ContainerAudio.ContainerAudioType;
 import yandex.cloud.api.ai.stt.v3.Stt.FinalRefinement;
 import yandex.cloud.api.ai.stt.v3.Stt.RecognitionModelOptions;
 import yandex.cloud.api.ai.stt.v3.Stt.StreamingResponse;
-import yandex.cloud.api.ai.stt.v3.SttService;
+import yandex.cloud.api.ai.stt.v3.SttService.GetRecognitionRequest;
 import yandex.cloud.api.operation.OperationOuterClass.Operation;
 
+/**
+ * Facade class for Yandex SpeechKit API
+ */
 @Component
 @RequiredArgsConstructor
 public class SpeechKitFacade {
 
     private final AsyncRecognizerBlockingStub asyncRecognizerStub;
 
+    /**
+     * Start async file recognition with type audio/ogg. Returns operation id
+     */
     public String recognizeOggFileAsync(File file) {
         byte[] fileBytes;
         try (InputStream input = new FileInputStream(file)) {
@@ -53,9 +59,12 @@ public class SpeechKitFacade {
         return operation.getId();
     }
 
+    /**
+     * Gets recognition by operation id. If recognition is still in progress empty options is returned.
+     */
     public Optional<String> getFinalRefinement(String operationId) {
         Iterator<StreamingResponse> response = asyncRecognizerStub
-                .getRecognition(SttService.GetRecognitionRequest.newBuilder()
+                .getRecognition(GetRecognitionRequest.newBuilder()
                         .setOperationId(operationId)
                         .build());
 
@@ -70,7 +79,7 @@ public class SpeechKitFacade {
                 joiner.add(text);
             }
 
-            if (!isEnded) {
+            if (!isEnded && next.hasAudioCursors()) {
                 AudioCursors audioCursors = next.getAudioCursors();
                 isEnded = (audioCursors.getReceivedDataMs() == audioCursors.getFinalTimeMs());
             }

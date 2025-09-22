@@ -18,6 +18,7 @@ import ru.andryss.speech_bot.BaseTest;
 import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingStub;
 import yandex.cloud.api.ai.stt.v3.Stt.Alternative;
 import yandex.cloud.api.ai.stt.v3.Stt.AlternativeUpdate;
+import yandex.cloud.api.ai.stt.v3.Stt.AudioCursors;
 import yandex.cloud.api.ai.stt.v3.Stt.AudioFormatOptions;
 import yandex.cloud.api.ai.stt.v3.Stt.ContainerAudio;
 import yandex.cloud.api.ai.stt.v3.Stt.ContainerAudio.ContainerAudioType;
@@ -107,6 +108,10 @@ class SpeechKitFacadeTest extends BaseTest {
                                         .setText(text)
                                         .build())
                                 .build())
+                        .build())
+                .setAudioCursors(AudioCursors.newBuilder()
+                        .setReceivedDataMs(2020)
+                        .setFinalTimeMs(2020)
                         .build())
                 .build();
     }
