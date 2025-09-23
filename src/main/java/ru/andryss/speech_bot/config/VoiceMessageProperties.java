@@ -15,7 +15,7 @@ import org.springframework.validation.annotation.Validated;
 @Configuration
 @ConfigurationProperties("executors.voice-message-executor.properties")
 public class VoiceMessageProperties {
-    @NotEmpty
+    @NotNull
     private List<Long> allowedUserIds = List.of();
     @NotEmpty
     private List<String> supportedVoiceMimeTypes = List.of("audio/ogg");
