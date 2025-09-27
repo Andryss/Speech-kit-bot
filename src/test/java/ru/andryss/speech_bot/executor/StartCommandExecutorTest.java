@@ -32,6 +32,61 @@ class StartCommandExecutorTest extends BaseTest {
     }
 
     @Test
+    void testCanProcessNoMessage() {
+        Update update = new Update();
+
+        Assertions.assertThat(executor.canProcess(update)).isFalse();
+    }
+
+    @Test
+    void testCanProcessEntitiesNull() {
+        Message message = new Message();
+        Update update = new Update();
+        update.setMessage(message);
+
+        Assertions.assertThat(executor.canProcess(update)).isFalse();
+    }
+
+    @Test
+    void testCanProcessEntitiesEmpty() {
+        Message message = new Message();
+        message.setEntities(List.of());
+        Update update = new Update();
+        update.setMessage(message);
+
+        Assertions.assertThat(executor.canProcess(update)).isFalse();
+    }
+
+    @Test
+    void testCanProcessEntitiesHasNoCommand() {
+        Message message = new Message();
+        message.setText("@username #hashtag $USD https://url.com hi!");
+        message.setEntities(List.of(
+                new MessageEntity("mention", 0, 9),
+                new MessageEntity("hashtag", 10, 8),
+                new MessageEntity("cashtag", 19, 4),
+                new MessageEntity("url", 24, 15)
+        ));
+        Update update = new Update();
+        update.setMessage(message);
+
+        Assertions.assertThat(executor.canProcess(update)).isFalse();
+    }
+
+    @Test
+    void testCanProcessEntitiesHasAnotherCommand() {
+        Message message = new Message();
+        message.setText("/unexpected");
+        message.setEntities(List.of(
+                new MessageEntity("bot_command", 0, 11)
+        ));
+        Update update = new Update();
+        update.setMessage(message);
+
+        Assertions.assertThat(executor.canProcess(update)).isFalse();
+    }
+
+    @Test
     void testCanProcessCommandWithoutMention() {
         Message message = new Message();
         message.setText("prefix /start suffix");

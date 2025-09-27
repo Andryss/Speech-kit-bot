@@ -4,17 +4,19 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Iterator;
 import java.util.Optional;
 import java.util.StringJoiner;
 
 import com.google.protobuf.ByteString;
+import io.grpc.Status.Code;
+import io.grpc.StatusException;
+import io.grpc.stub.BlockingClientCall;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingStub;
+import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingV2Stub;
 import yandex.cloud.api.ai.stt.v3.Stt;
-import yandex.cloud.api.ai.stt.v3.Stt.AudioCursors;
 import yandex.cloud.api.ai.stt.v3.Stt.AudioFormatOptions;
 import yandex.cloud.api.ai.stt.v3.Stt.ContainerAudio;
 import yandex.cloud.api.ai.stt.v3.Stt.ContainerAudio.ContainerAudioType;
@@ -27,11 +29,12 @@ import yandex.cloud.api.operation.OperationOuterClass.Operation;
 /**
  * Facade class for Yandex SpeechKit API
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SpeechKitFacade {
 
-    private final AsyncRecognizerBlockingStub asyncRecognizerStub;
+    private final AsyncRecognizerBlockingV2Stub asyncRecognizerStub;
 
     /**
      * Start async file recognition with type audio/ogg. Returns operation id
@@ -44,17 +47,22 @@ public class SpeechKitFacade {
             throw new RuntimeException(e);
         }
 
-        Operation operation = asyncRecognizerStub
-                .recognizeFile(Stt.RecognizeFileRequest.newBuilder()
-                        .setContent(ByteString.copyFrom(fileBytes))
-                        .setRecognitionModel(RecognitionModelOptions.newBuilder()
-                                .setAudioFormat(AudioFormatOptions.newBuilder()
-                                        .setContainerAudio(ContainerAudio.newBuilder()
-                                                .setContainerAudioType(ContainerAudioType.OGG_OPUS)
-                                                .build())
-                                        .build())
-                                .build())
-                        .build());
+        Operation operation;
+        try {
+            operation = asyncRecognizerStub
+                    .recognizeFile(Stt.RecognizeFileRequest.newBuilder()
+                            .setContent(ByteString.copyFrom(fileBytes))
+                            .setRecognitionModel(RecognitionModelOptions.newBuilder()
+                                    .setAudioFormat(AudioFormatOptions.newBuilder()
+                                            .setContainerAudio(ContainerAudio.newBuilder()
+                                                    .setContainerAudioType(ContainerAudioType.OGG_OPUS)
+                                                    .build())
+                                            .build())
+                                    .build())
+                            .build());
+        } catch (StatusException e) {
+            throw new RuntimeException(e);
+        }
 
         return operation.getId();
     }
@@ -63,31 +71,32 @@ public class SpeechKitFacade {
      * Gets recognition by operation id. If recognition is still in progress empty options is returned.
      */
     public Optional<String> getFinalRefinement(String operationId) {
-        Iterator<StreamingResponse> response = asyncRecognizerStub
+        BlockingClientCall<?, StreamingResponse> response = asyncRecognizerStub
                 .getRecognition(GetRecognitionRequest.newBuilder()
                         .setOperationId(operationId)
                         .build());
 
         StringJoiner joiner = new StringJoiner("\n");
-        boolean isEnded = false;
 
-        while (response.hasNext()) {
-            StreamingResponse next = response.next();
+        try {
+            while (response.hasNext()) {
+                StreamingResponse next = response.read();
 
-            if (next.getFinalRefinement() != FinalRefinement.getDefaultInstance()) {
-                String text = next.getFinalRefinement().getNormalizedText().getAlternatives(0).getText();
-                joiner.add(text);
+                if (next.getFinalRefinement() != FinalRefinement.getDefaultInstance()) {
+                    String text = next.getFinalRefinement().getNormalizedText().getAlternatives(0).getText();
+                    joiner.add(text);
+                }
             }
-
-            if (!isEnded && next.hasAudioCursors()) {
-                AudioCursors audioCursors = next.getAudioCursors();
-                isEnded = (audioCursors.getReceivedDataMs() == audioCursors.getFinalTimeMs());
+        } catch (StatusException e) {
+            if (e.getStatus().getCode() == Code.NOT_FOUND) {
+                log.info("Assuming result is not ready StatusException {}", e.getMessage());
+                return Optional.empty();
             }
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
-        if (isEnded) {
-            return Optional.of(joiner.toString());
-        }
-        return Optional.empty();
+        return Optional.of(joiner.toString());
     }
 }

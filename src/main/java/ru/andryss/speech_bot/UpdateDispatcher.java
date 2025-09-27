@@ -10,11 +10,12 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import ru.andryss.speech_bot.config.BotProperties;
+import ru.andryss.speech_bot.config.requestid.RequestIdAware;
 import ru.andryss.speech_bot.executor.UpdateExecutor;
 
 @Slf4j
 @Component
-public class UpdateDispatcher extends TelegramLongPollingBot {
+public class UpdateDispatcher extends TelegramLongPollingBot implements RequestIdAware {
 
     private final BotProperties properties;
     private final List<UpdateExecutor> executors;
@@ -38,6 +39,17 @@ public class UpdateDispatcher extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
+        String requestId = generateRequestId();
+        assignRequestId(requestId);
+
+        try {
+            handleUpdate(update);
+        } finally {
+            clearRequestId();
+        }
+    }
+
+    private void handleUpdate(Update update) {
         log.info("Update received {}", update);
 
         Integer updateId = update.getUpdateId();

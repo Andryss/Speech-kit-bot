@@ -4,13 +4,13 @@ import org.mockito.Mockito;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingStub;
+import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingV2Stub;
 
 @Configuration
 public class MockBeansConfig {
 
     @Bean
-    public AsyncRecognizerBlockingStub yandexGptApi() {
-        return Mockito.mock(AsyncRecognizerBlockingStub.class);
+    public AsyncRecognizerBlockingV2Stub asyncRecognizerStub() {
+        return Mockito.mock(AsyncRecognizerBlockingV2Stub.class);
     }
 }

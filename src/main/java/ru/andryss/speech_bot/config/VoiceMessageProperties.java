@@ -24,8 +24,8 @@ public class VoiceMessageProperties {
     private Long maxVoiceMaxSizeBytes = 30_000_000L;
     @NotNull
     @Positive
-    private Integer maxVoiceRecognitionAttempts = 5;
+    private Integer maxVoiceRecognitionAttempts = 10;
     @NotNull
     @Positive
-    private Long waitBetweenRecognitionAttemptsMs = 4_000L;
+    private Long waitBetweenRecognitionAttemptsMs = 3_000L;
 }

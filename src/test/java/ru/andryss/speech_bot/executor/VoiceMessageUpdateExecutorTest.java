@@ -1,7 +1,8 @@
 package ru.andryss.speech_bot.executor;
 
-import java.util.List;
-
+import io.grpc.Status;
+import io.grpc.StatusException;
+import io.grpc.stub.BlockingClientCall;
 import lombok.SneakyThrows;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +25,7 @@ import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import ru.andryss.speech_bot.BaseTest;
 
-import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingStub;
+import yandex.cloud.api.ai.stt.v3.AsyncRecognizerGrpc.AsyncRecognizerBlockingV2Stub;
 import yandex.cloud.api.ai.stt.v3.Stt.Alternative;
 import yandex.cloud.api.ai.stt.v3.Stt.AlternativeUpdate;
 import yandex.cloud.api.ai.stt.v3.Stt.AudioCursors;
@@ -43,12 +44,12 @@ class VoiceMessageUpdateExecutorTest extends BaseTest {
     DefaultAbsSender sender;
 
     @Autowired
-    AsyncRecognizerBlockingStub asyncRecognizerStub;
+    AsyncRecognizerBlockingV2Stub asyncRecognizerStub;
 
     @BeforeEach
     @SneakyThrows
     void before() {
-        Mockito.clearInvocations(asyncRecognizerStub);
+        Mockito.reset(asyncRecognizerStub);
     }
 
     @Test
@@ -169,22 +170,27 @@ class VoiceMessageUpdateExecutorTest extends BaseTest {
         File tgFileInfo = mockGetFile();
         mockRecognizeFile();
 
-        Mockito.when(asyncRecognizerStub.getRecognition(Mockito.any()))
-                .thenReturn(List.of(
-                        StreamingResponse.newBuilder()
-                                .setFinalRefinement(FinalRefinement.newBuilder()
-                                        .setNormalizedText(AlternativeUpdate.newBuilder()
-                                                .addAlternatives(Alternative.newBuilder()
-                                                        .setText("final refinement")
-                                                        .build())
+        //noinspection rawtypes
+        BlockingClientCall call = Mockito.mock(BlockingClientCall.class);
+        Mockito.when(call.hasNext()).thenReturn(true, false);
+        Mockito.when(call.read()).thenReturn(
+                StreamingResponse.newBuilder()
+                        .setFinalRefinement(FinalRefinement.newBuilder()
+                                .setNormalizedText(AlternativeUpdate.newBuilder()
+                                        .addAlternatives(Alternative.newBuilder()
+                                                .setText("final refinement")
                                                 .build())
                                         .build())
-                                .setAudioCursors(AudioCursors.newBuilder()
-                                        .setReceivedDataMs(1010)
-                                        .setFinalTimeMs(1010)
-                                        .build())
-                                .build()
-                ).iterator());
+                                .build())
+                        .setAudioCursors(AudioCursors.newBuilder()
+                                .setReceivedDataMs(1010)
+                                .setFinalTimeMs(1010)
+                                .build())
+                        .build()
+        );
+        //noinspection unchecked
+        Mockito.when(asyncRecognizerStub.getRecognition(Mockito.any()))
+                .thenReturn(call);
 
         executor.process(update, sender);
 
@@ -211,31 +217,60 @@ class VoiceMessageUpdateExecutorTest extends BaseTest {
         File tgFileInfo = mockGetFile();
         mockRecognizeFile();
 
+        //noinspection rawtypes
+        BlockingClientCall call = Mockito.mock(BlockingClientCall.class);
+        Mockito.when(call.hasNext()).thenThrow(
+                new StatusException(Status.NOT_FOUND.withDescription("Operation is not ready..."))
+        );
+        //noinspection unchecked
         Mockito.when(asyncRecognizerStub.getRecognition(Mockito.any()))
-                .thenReturn(List.of(
-                        StreamingResponse.newBuilder()
-                                .setFinal(AlternativeUpdate.newBuilder()
-                                        .addAlternatives(Alternative.newBuilder()
-                                                .setText("...")
-                                                .build())
-                                        .build())
-                                .build()
-                ).iterator());
+                .thenReturn(call);
 
         executor.process(update, sender);
 
         verifyGetFile();
         verifyDownloadFile(tgFileInfo);
         verifyRecognizeFile();
-        verifyGetRecognition(5);
+        verifyGetRecognition(10);
 
-        verifySendTypingAction(6);
+        verifySendTypingAction(11);
 
         ArgumentCaptor<SendMessage> argumentCaptor = ArgumentCaptor.forClass(SendMessage.class);
         Mockito.verify(sender).execute(argumentCaptor.capture());
         Assertions.assertThat(argumentCaptor.getValue())
                 .extracting("chatId", "text")
                 .containsExactly("456", "Recognition takes too much time...");
+        Mockito.verifyNoMoreInteractions(sender);
+    }
+
+    @Test
+    @SneakyThrows
+    void testProcessUnexpectedError() {
+        Update update = getUpdateData();
+
+        File tgFileInfo = mockGetFile();
+        mockRecognizeFile();
+
+        Mockito.when(asyncRecognizerStub.getRecognition(Mockito.any()))
+                .thenThrow(new RuntimeException("Some error occurred"));
+
+        Assertions.assertThatThrownBy(() -> executor.process(update, sender))
+                .rootCause()
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Some error occurred");
+
+        verifyGetFile();
+        verifyDownloadFile(tgFileInfo);
+        verifyRecognizeFile();
+        verifyGetRecognition(1);
+
+        verifySendTypingAction(2);
+
+        ArgumentCaptor<SendMessage> argumentCaptor = ArgumentCaptor.forClass(SendMessage.class);
+        Mockito.verify(sender).execute(argumentCaptor.capture());
+        Assertions.assertThat(argumentCaptor.getValue())
+                .extracting("chatId", "text")
+                .containsExactly("456", "Internal error occurred");
         Mockito.verifyNoMoreInteractions(sender);
     }
 
@@ -276,6 +311,7 @@ class VoiceMessageUpdateExecutorTest extends BaseTest {
         Mockito.verify(sender).downloadFile(Mockito.same(tgFileInfo), Mockito.any());
     }
 
+    @SneakyThrows
     private void mockRecognizeFile() {
         Mockito.when(asyncRecognizerStub.recognizeFile(Mockito.any()))
                 .thenReturn(OperationOuterClass.Operation.newBuilder()
@@ -283,6 +319,7 @@ class VoiceMessageUpdateExecutorTest extends BaseTest {
                         .build());
     }
 
+    @SneakyThrows
     private void verifyRecognizeFile() {
         Mockito.verify(asyncRecognizerStub).recognizeFile(Mockito.assertArg(request -> {
             Assertions.assertThat(request.getContent()).isNotNull();
